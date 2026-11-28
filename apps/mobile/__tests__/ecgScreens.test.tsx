@@ -174,11 +174,12 @@ describe('ECG result screen', () => {
     expect(screen.queryByText(/normal|sinus|atrial|irregular/i)).toBeNull();
   });
 
-  it('names wrist movement by its size', () => {
-    expect(movementBand(0.0199)).toBe('still');
+  it('names wrist movement by its size, as shown to two decimals', () => {
+    expect(movementBand(0.0149)).toBe('still');
+    expect(movementBand(0.0196)).toBe('some');
     expect(movementBand(0.02)).toBe('some');
-    expect(movementBand(0.0799)).toBe('some');
-    expect(movementBand(0.08)).toBe('lots');
+    expect(movementBand(0.0749)).toBe('some');
+    expect(movementBand(0.0796)).toBe('lots');
   });
 
   it('waits for the next sync only while the last sync ended before the reading did', () => {
@@ -191,6 +192,12 @@ describe('ECG result screen', () => {
     mockParams = { id: '4' };
     await render(withAppData(<EcgResultScreen />, 'en', { ecgRecordings: [{ ...RECORDING, movementG: 0.01 }] }));
     expect(screen.getByTestId('ecg-movement-value').props.children).toBe('Still (0.01 g)');
+  });
+
+  it('writes the movement with the language decimal mark', async () => {
+    mockParams = { id: '4' };
+    await render(withAppData(<EcgResultScreen />, 'nl', { ecgRecordings: [{ ...RECORDING, movementG: 0.0196 }] }));
+    expect(screen.getByTestId('ecg-movement-value').props.children).toBe('Wat beweging (0,02 g)');
   });
 
   it('says why a reading has no movement value', async () => {

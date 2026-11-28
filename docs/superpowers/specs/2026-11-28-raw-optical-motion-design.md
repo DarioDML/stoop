@@ -110,7 +110,7 @@ From research on 2026-11-28; sources are in the PR.
    - The strength summary says which sets had motion. It carries level D and a method sheet.
    - **Validation before the factor counts:** the owner logs one light and one heavy working set of the same exercise and checks, from the Developer CSV and the summary, that the heavy set gets the higher factor. Until that check passes, the build shows the factor but computes load as plain volume. One constant switches it on.
 6. **ECG movement line.**
-   - The band saves R21 during an ECG reading, and a sync brings it in. After that sync, the reading's wrist movement (the RMS of dynamic acceleration, in g) is computed once and **stored on the ECG record**, so it survives pruning of the raw motion. **(owner review)**
+   - The band saves R21 during an ECG reading, and a sync brings it in. After that sync, the reading's wrist movement (the 75th percentile of the per-second RMS of dynamic acceleration, in g, so a hand settling in the first seconds does not make a still reading look moving; changed after the S24 check, `ecg.movement-p75@1`) is computed once and **stored on the ECG record**, so it survives pruning of the raw motion. **(owner review)**
    - The result shows it as a reason for a noisy trace. It is a fact, not a verdict.
 7. **Post-sync recompute.** **(owner review)** After every sync that stores new motion rows, the app recomputes:
    - `strength_set_motion` for each strength session that overlaps the new rows and still has sets without readable motion. This is what makes "Record on band" fill in a workout afterwards.

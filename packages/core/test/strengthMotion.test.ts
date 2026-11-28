@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   addStrengthSet,
   afterSignals,
+  computeEcgMovement,
   computeSessionMotion,
   insertEcgRecording,
   insertSignals,
@@ -136,5 +137,19 @@ describe('per-set motion', () => {
     await pruneSignalsBefore(store.driver, deviceId, T0 + 1_000);
     expect((await afterSignals(store.driver, deviceId, { from: T0, to: T0 + 40 }, 0)).ecg).toBe(0);
     expect((await listEcgRecordings(store.driver, deviceId))[0]?.movementG).toBe(reading?.movementG);
+  });
+
+  it('a recompute replaces stored ECG movement only where the motion is still kept', async () => {
+    await storeMotion(T0, [still(5), lift(12), still(5)]);
+    await insertEcgRecording(store.driver, deviceId, { startedAt: T0 + 5, durationMs: 30_000, samples: [1, 2, 3], rateHz: 128, wrist: 'left' });
+    await insertEcgRecording(store.driver, deviceId, { startedAt: T0 + 5_000, durationMs: 30_000, samples: [1, 2, 3], rateHz: 128, wrist: 'left' });
+    await store.driver.run('UPDATE ecg_recordings SET movement_g = 0.5');
+    expect(await computeEcgMovement(store.driver, deviceId, 0, T0 + 10_000, 0)).toBe(0);
+    expect(await computeEcgMovement(store.driver, deviceId, 0, T0 + 10_000, 0, { replace: true })).toBe(1);
+    const readings = await listEcgRecordings(store.driver, deviceId);
+    const kept = readings.find((r) => r.t === T0 + 5);
+    expect(kept?.movementG).toBeGreaterThan(0.1);
+    expect(kept?.movementG).not.toBe(0.5);
+    expect(readings.find((r) => r.t === T0 + 5_000)?.movementG).toBe(0.5);
   });
 });

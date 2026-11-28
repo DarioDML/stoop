@@ -10,6 +10,7 @@ export const STRENGTH_MOTION = {
   activityFloorG: 0.02,
   activityCeilingG: 0.1,
   quietPercentile: 0.1,
+  ecgMovementPercentile: 0.75,
   gyroWeightGPerDps: 0.001,
   minBoutS: 1.5,
   maxLiftCadenceHz: 1.1,
@@ -284,12 +285,15 @@ export function tempoFactor(tempoS: number | null, referenceTempos: readonly num
 export function wristMovementG(seconds: readonly MotionSecond[], from: number, to: number): number | null {
   const s = seriesBetween(seconds, from - C.gravityWindowS, to + C.gravityWindowS);
   if (s === null) return null;
-  let sum = 0;
-  let n = 0;
+  const perSecond = new Map<number, { sum: number; n: number }>();
   s.time.forEach((t, i) => {
     if (t < from || t > to) return;
-    sum += (s.dx[i] ?? 0) ** 2 + (s.dy[i] ?? 0) ** 2 + (s.dz[i] ?? 0) ** 2;
-    n += 1;
+    const bucket = perSecond.get(Math.floor(t)) ?? { sum: 0, n: 0 };
+    bucket.sum += (s.dx[i] ?? 0) ** 2 + (s.dy[i] ?? 0) ** 2 + (s.dz[i] ?? 0) ** 2;
+    bucket.n += 1;
+    perSecond.set(Math.floor(t), bucket);
   });
-  return n === 0 ? null : Math.sqrt(sum / n);
+  const rms = [...perSecond.values()].map((b) => Math.sqrt(b.sum / b.n)).sort((a, b) => a - b);
+  if (rms.length === 0) return null;
+  return rms[Math.ceil(rms.length * C.ecgMovementPercentile) - 1] ?? null;
 }

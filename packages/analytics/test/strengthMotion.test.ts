@@ -64,6 +64,15 @@ function synthSession(segments: readonly Segment[]): MotionSecond[] {
   return seconds;
 }
 
+function jolt(seconds: readonly MotionSecond[], from: number, count: number, ampG: number): void {
+  for (const second of seconds) {
+    if (second.t < from || second.t >= from + count) continue;
+    second.accel[0].forEach((v, i, axis) => {
+      axis[i] = v + ampG * Math.sin((2 * Math.PI * 3 * i) / RATE);
+    });
+  }
+}
+
 function endOf(seconds: readonly MotionSecond[]): number {
   return (seconds[seconds.length - 1]?.t ?? T0) + 1;
 }
@@ -184,5 +193,17 @@ describe('wrist movement', () => {
     expect(wristMovementG(still, T0 + 5, T0 + 35)).toBeLessThan(0.01);
     expect(wristMovementG(moving, T0 + 5, T0 + 35)).toBeGreaterThan(0.15);
     expect(wristMovementG(still, T0 + 100, T0 + 130)).toBeNull();
+  });
+
+  it('stays still when the hand only settles in the first seconds', () => {
+    const seconds = synthSession([{ kind: 'still', s: 40 }]);
+    jolt(seconds, T0 + 5, 3, 0.5);
+    expect(wristMovementG(seconds, T0 + 5, T0 + 35)).toBeLessThan(0.02);
+  });
+
+  it('is not still when the wrist moves for a third of the reading', () => {
+    const seconds = synthSession([{ kind: 'still', s: 40 }]);
+    jolt(seconds, T0 + 5, 10, 0.3);
+    expect(wristMovementG(seconds, T0 + 5, T0 + 35)).toBeGreaterThan(0.08);
   });
 });

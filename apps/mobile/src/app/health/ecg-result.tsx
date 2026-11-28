@@ -13,7 +13,7 @@ import { shareEcgCsv } from '@/data/ecgShare';
 import { shareReportPdf } from '@/data/reportShare';
 import { useT, type TFunction } from '@/i18n/useT';
 import { deviceTzOffsetS, todayIsoDate, unixToIsoDate } from '@/lib/dates';
-import { formatClock, formatShortDay } from '@/lib/format';
+import { formatClock, formatNumber, formatShortDay } from '@/lib/format';
 import { AppText } from '@/ui/AppText';
 import { Card } from '@/ui/Card';
 import { Button } from '@/ui/controls';
@@ -80,8 +80,8 @@ function symptomsText(t: TFunction, symptoms: readonly EcgSymptom[]): string {
   return symptoms.length === 0 ? t('ecg.feel.notSaid') : symptoms.map((symptom) => t(`ecg.feel.${symptom}`)).join(', ');
 }
 
-function movementText(t: TFunction, recording: EcgSummary, lastSyncAt: number | null): string {
-  if (recording.movementG !== null) return t(`ecg.movement.${movementBand(recording.movementG)}`, { g: recording.movementG.toFixed(2) });
+function movementText(t: TFunction, language: Language, recording: EcgSummary, lastSyncAt: number | null): string {
+  if (recording.movementG !== null) return t(`ecg.movement.${movementBand(recording.movementG)}`, { g: formatNumber(recording.movementG, 2, language) });
   return t(movementMissing(recording.t, recording.durationMs, lastSyncAt) === 'awaitingSync' ? 'ecg.movement.awaitingSync' : 'ecg.movement.noData');
 }
 
@@ -140,7 +140,7 @@ export default function EcgResultScreen() {
     { id: 'wrist', label: t('ecg.wrist'), value: wristText(t, recording) },
     { id: 'rate', label: t('ecg.rate'), value: recording.rateHz === null ? t('band.unknown') : t('ecg.rateValue', { rate: Math.round(recording.rateHz) }) },
     { id: 'samples', label: t('ecg.sampleCount'), value: String(recording.sampleCount) },
-    { id: 'movement', label: t('ecg.movement'), value: movementText(t, recording, device.lastSyncAt) },
+    { id: 'movement', label: t('ecg.movement'), value: movementText(t, language, recording, device.lastSyncAt) },
     { id: 'band-hr', label: t('ecg.bandHr'), value: avgHr === null ? t('ecg.bandHrNone') : t('ecg.bandHrValue', { bpm: avgHr }) },
     { id: 'felt', label: t('ecg.feel.title'), value: symptomsText(t, symptoms) },
   ];
