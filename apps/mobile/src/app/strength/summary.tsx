@@ -45,7 +45,7 @@ const HR_BUCKET_S = 10;
 export default function StrengthSummaryScreen() {
   const { t } = useT();
   const { colors } = useTheme();
-  const { strength, strengthActions, heartRateBetween, days } = useAppData();
+  const { strength, strengthActions, heartRateBetween, days, motion } = useAppData();
   const labels = useStrengthLabels();
   const referenceAt = useLoadReference();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -108,7 +108,11 @@ export default function StrengthSummaryScreen() {
   const exercises = exerciseVolumes(session.sets);
   const oneRepMaxRecords = newRecords(session, strength.sessions);
   const records = sessionRecords(session, strength.sessions);
-  const muscles = muscleLoad(session.sets);
+  const factors = new Map(session.sets.flatMap((set): [number, number][] => {
+    const view = motion.sets[set.id];
+    return view?.status === 'readable' ? [[set.id, view.factor]] : [];
+  }));
+  const muscles = muscleLoad(session.sets, factors);
   const intensity = muscleIntensity(muscles);
   const volume = labels.volume(totals.volumeKg);
   const time = formatClockTimer(durationS(session, 0));
@@ -214,7 +218,7 @@ export default function StrengthSummaryScreen() {
         </AppText>
       </Card>
 
-      <LevelNote level="C" text={t('strength.summary.loadBody')} testID="summary-level" />
+      <LevelNote level={factors.size > 0 ? 'D' : 'C'} text={t(factors.size > 0 ? 'strength.summary.loadBodyMotion' : 'strength.summary.loadBody')} testID="summary-level" />
 
       <StatRow>
         <StatTile label={t('strength.summary.sets')} value={`${totals.sets}`} testID="summary-sets" />

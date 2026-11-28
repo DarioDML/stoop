@@ -112,3 +112,16 @@ export function toggleEcgSymptom(current: readonly EcgSymptom[], symptom: EcgSym
   if (symptom === 'none') return ['none'];
   return [...current.filter((s) => s !== 'none'), symptom];
 }
+
+export type MovementBand = 'still' | 'some' | 'lots';
+
+export const MOVEMENT_G = { still: 0.02, some: 0.08 } as const;
+
+export function movementBand(g: number): MovementBand {
+  if (g < MOVEMENT_G.still) return 'still';
+  return g < MOVEMENT_G.some ? 'some' : 'lots';
+}
+
+export function movementMissing(recordingT: number, durationMs: number, lastSyncAt: number | null): 'awaitingSync' | 'noData' {
+  return lastSyncAt === null || lastSyncAt < recordingT + durationMs / 1000 ? 'awaitingSync' : 'noData';
+}

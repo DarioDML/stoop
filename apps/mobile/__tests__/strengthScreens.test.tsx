@@ -2,6 +2,7 @@ import type { StrengthData, StrengthSession, StrengthSet, StrengthTemplate } fro
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react-native';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import type { ReactNode } from 'react';
+import { AppState } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import { defaultCoachPrefs } from '@/coach/prefs';
@@ -15,7 +16,7 @@ import type { GatedFetch } from '@/net/gate';
 import { WeekCard } from '@/ui/daily/cards';
 import { useSessionHeartRate } from '@/ui/strength/useSessionHeartRate';
 
-import { FIXTURE_NOW, fixtureAppData, fixtureBandActions, fixtureStrengthActions, withAppData, type AppDataOverrides } from './support/appData';
+import { FIXTURE_NOW, fixtureAppData, fixtureBandActions, fixtureMotionActions, fixtureStrengthActions, withAppData, type AppDataOverrides } from './support/appData';
 import { TEST_KEY, jsonResponse, makeController, messageBody, withCoach } from './support/coach';
 
 let mockParams: Record<string, string | string[] | undefined> = {};
@@ -479,6 +480,87 @@ describe('workout builder with the coach', () => {
     await fireEvent.changeText(screen.getByTestId('builder-describe'), 'full body');
     await fireEvent.press(screen.getByTestId('builder-describe-send'));
     await waitFor(() => expect(screen.getByTestId('builder-coach-status')).toHaveTextContent(/could not be turned into exercises/));
+  });
+});
+
+describe('motion during a session', () => {
+  const benchSet: StrengthSet = { id: 901, sessionId: 4, exerciseKey: 'lib:bench_press', exerciseName: 'Bench press', muscle: 'chest', reps: 8, weightKg: 60, rpe: null, doneAt: NOW_S - 60 };
+  const running: StrengthSession = {
+    id: 4,
+    templateId: 7,
+    name: 'Push day',
+    day: '2026-11-25',
+    startedAt: NOW_S - 300,
+    endedAt: null,
+    exercises: [{ id: 12, sessionId: 4, position: 0, exerciseKey: 'lib:bench_press', exerciseName: 'Bench press', muscle: 'chest', sets: 3, reps: 8, weightKg: 60 }],
+    sets: [benchSet],
+  };
+  const readable = { status: 'readable' as const, repsDetected: 8, tutS: 21, tempoS: 2.6, velocityLoss: 0.1, factor: 1.08 };
+  const motionOn = (sets: Record<number, typeof readable | { status: 'unreadable' | 'unmatched' | 'none'; repsDetected: null; tutS: null; tempoS: null; velocityLoss: null; factor: number }>) => ({
+    highRate: true,
+    bandRecording: false,
+    sets,
+  });
+
+  it('shows what the band measured under a logged set', async () => {
+    await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({ 901: readable }) })));
+    expect(screen.getByText('Band: 8 reps · 21 s under tension · 2.6 s per rep')).toBeTruthy();
+  });
+
+  it('says when motion could not be read or matched', async () => {
+    const unreadable = { status: 'unreadable' as const, repsDetected: null, tutS: null, tempoS: null, velocityLoss: null, factor: 1 };
+    const view = await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({ 901: unreadable }) })));
+    expect(screen.getByText('Motion not readable for this exercise')).toBeTruthy();
+    await view.unmount();
+    await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({ 901: { ...unreadable, status: 'unmatched' } }) })));
+    expect(screen.getByText('Motion recorded, but it could not be matched to your sets')).toBeTruthy();
+  });
+
+  it('offers the band-counted reps for the set in progress without overwriting them', async () => {
+    const motionActions = { ...fixtureMotionActions(), liveReps: jest.fn(async () => 7) };
+    await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({}), motionActions })));
+    expect(screen.getByTestId('live-reps-lib:bench_press').props.value).toBe('8');
+    const chip = await screen.findByText('Band counted 7 · Use');
+    expect(screen.getByTestId('live-reps-lib:bench_press').props.value).toBe('8');
+    await fireEvent.press(chip);
+    expect(screen.getByTestId('live-reps-lib:bench_press').props.value).toBe('7');
+    expect(screen.queryByText('Band counted 7 · Use')).toBeNull();
+  });
+
+  it('does not read band reps while the app is in the background', async () => {
+    const motionActions = { ...fixtureMotionActions(), liveReps: jest.fn(async () => 7) };
+    const original = Object.getOwnPropertyDescriptor(AppState, 'currentState');
+    Object.defineProperty(AppState, 'currentState', { value: 'background', configurable: true });
+    try {
+      await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({}), motionActions })));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(motionActions.liveReps).not.toHaveBeenCalled();
+    } finally {
+      if (original !== undefined) Object.defineProperty(AppState, 'currentState', original);
+    }
+  });
+
+  it('records on the band only when asked, and says what it costs', async () => {
+    const motionActions = { ...fixtureMotionActions(), setBandRecording: jest.fn(async () => true) };
+    await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({}), motionActions })));
+    expect(screen.getByText(/adds about 13 minutes to the next sync per hour/)).toBeTruthy();
+    await fireEvent(screen.getByTestId('live-band-recording'), 'valueChange', true);
+    expect(motionActions.setBandRecording).toHaveBeenCalledWith(true);
+  });
+
+  it('shows no motion card while high-rate motion is off', async () => {
+    await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions())));
+    expect(screen.queryByTestId('live-motion')).toBeNull();
+  });
+
+  it('marks the muscle rows that had motion and keeps plain volume until the factor is switched on', async () => {
+    const done: StrengthSession = { ...running, endedAt: NOW_S, sets: [benchSet] };
+    await render(withAppData(<StrengthSummaryScreen />, 'en', app(data({ sessions: [done] }), actions(), { motion: motionOn({ 901: readable }) })));
+    expect(screen.getByText('1 of 1 sets with motion')).toBeTruthy();
+    expect(within(screen.getByTestId('summary-load-rows')).getByText(/480/)).toBeTruthy();
+    expect(screen.getByText(/weighted by rep tempo/)).toBeTruthy();
   });
 });
 

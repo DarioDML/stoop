@@ -110,7 +110,7 @@ describe('period buckets', () => {
   });
 
   it('adds up muscle volume over the same period as the tiles', () => {
-    expect(periodMuscles('1w', SESSIONS, TODAY)).toEqual([{ muscle: 'chest', sets: 2, volumeKg: 4000, share: 1 }]);
+    expect(periodMuscles('1w', SESSIONS, TODAY)).toEqual([{ muscle: 'chest', sets: 2, volumeKg: 4000, share: 1, motionSets: 0 }]);
     expect(periodMuscles('6m', SESSIONS, TODAY)[0]).toMatchObject({ sets: 5, volumeKg: 7500 });
   });
 });

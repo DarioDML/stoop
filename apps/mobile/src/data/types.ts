@@ -209,6 +209,28 @@ export interface RawStreamActions {
   opticalSeconds(): readonly LiveOpticalSecond[];
 }
 
+export interface SetMotionView {
+  status: 'readable' | 'unreadable' | 'unmatched' | 'none';
+  repsDetected: number | null;
+  tutS: number | null;
+  tempoS: number | null;
+  velocityLoss: number | null;
+  factor: number;
+}
+
+export interface MotionState {
+  highRate: boolean;
+  bandRecording: boolean;
+  sets: Readonly<Record<number, SetMotionView>>;
+}
+
+export interface MotionActions {
+  setHighRate(on: boolean): Promise<boolean>;
+  setBandRecording(on: boolean): Promise<boolean>;
+  liveReps(): Promise<number | null>;
+  resumeStream(): Promise<void>;
+}
+
 export interface LiveData {
   live: LiveState;
   syncProgress: SyncProgressView | null;
@@ -262,6 +284,8 @@ export interface AppData {
   ecgWrist: Wrist;
   ecgActions: EcgActions;
   rawStreams: RawStreamActions;
+  motion: MotionState;
+  motionActions: MotionActions;
   stopLive(): Promise<void>;
   exportData(content?: ExportContent): Promise<void>;
   storageStats(): Promise<StorageStats | null>;

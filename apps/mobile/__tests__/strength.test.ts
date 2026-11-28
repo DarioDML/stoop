@@ -12,12 +12,14 @@ import {
   formatClockTimer,
   heartRateStats,
   libraryIdOf,
+  MOTION_FACTOR_ENABLED,
   muscleLoad,
   newRecords,
   restRemainingS,
   sessionTotals,
   sessionsThisWeek,
   setVolumeKg,
+  suggestReps,
   strengthWeek,
   suggestSet,
   validateSetDraft,
@@ -164,6 +166,38 @@ describe('muscular load', () => {
   it('has no share when nothing carries weight, and is empty without sets', () => {
     expect(muscleLoad([set({ exerciseKey: 'lib:crunch', muscle: 'core', reps: 15, weightKg: 0 })])[0]?.share).toBeNull();
     expect(muscleLoad([])).toEqual([]);
+  });
+});
+
+describe('muscular load with motion', () => {
+  const bench = set({ id: 1, exerciseKey: 'lib:bench_press', muscle: 'chest', reps: 10, weightKg: 100 });
+  const press = set({ id: 2, exerciseKey: 'lib:overhead_press', muscle: 'shoulders', reps: 10, weightKg: 40 });
+
+  it('stays plain volume while the motion factor is switched off', () => {
+    expect(MOTION_FACTOR_ENABLED).toBe(false);
+    const load = muscleLoad([bench, press], new Map([[1, 1.2]]));
+    expect(load.map((row) => [row.muscle, row.volumeKg, row.motionSets])).toEqual([
+      ['chest', 1000, 1],
+      ['shoulders', 400, 0],
+    ]);
+  });
+
+  it('weights a set with motion by its factor once the factor is switched on', () => {
+    const load = muscleLoad([bench, press], new Map([[1, 1.2]]), true);
+    expect(load.map((row) => [row.muscle, row.volumeKg])).toEqual([
+      ['chest', 1200],
+      ['shoulders', 400],
+    ]);
+  });
+});
+
+describe('rep suggestion from the band', () => {
+  it('suggests the counted reps only when they differ from the draft', () => {
+    expect(suggestReps(7, '8')).toBe(7);
+    expect(suggestReps(7, '7')).toBeNull();
+    expect(suggestReps(null, '8')).toBeNull();
+    expect(suggestReps(0, '8')).toBeNull();
+    expect(suggestReps(7, '')).toBe(7);
   });
 });
 

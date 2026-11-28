@@ -7,7 +7,7 @@ import { Alert, View, type TextLayoutEvent } from 'react-native';
 import { useAppData } from '@/data/context';
 import type { Language } from '@/data/types';
 import { singleParam } from '@/data/dailyDerived';
-import { ECG_STRIP_S, ecgStrips, stripLength, toggleEcgSymptom, traceRange } from '@/data/ecg';
+import { ECG_STRIP_S, ecgStrips, stripLength, toggleEcgSymptom, traceRange, movementBand, movementMissing } from '@/data/ecg';
 import { ecgReportHtml } from '@/data/ecgReport';
 import { shareEcgCsv } from '@/data/ecgShare';
 import { shareReportPdf } from '@/data/reportShare';
@@ -80,6 +80,11 @@ function symptomsText(t: TFunction, symptoms: readonly EcgSymptom[]): string {
   return symptoms.length === 0 ? t('ecg.feel.notSaid') : symptoms.map((symptom) => t(`ecg.feel.${symptom}`)).join(', ');
 }
 
+function movementText(t: TFunction, recording: EcgSummary, lastSyncAt: number | null): string {
+  if (recording.movementG !== null) return t(`ecg.movement.${movementBand(recording.movementG)}`, { g: recording.movementG.toFixed(2) });
+  return t(movementMissing(recording.t, recording.durationMs, lastSyncAt) === 'awaitingSync' ? 'ecg.movement.awaitingSync' : 'ecg.movement.noData');
+}
+
 function seconds(t: TFunction, recording: EcgSummary): string {
   return t('ecg.seconds', { seconds: Math.round(recording.durationMs / 1000) });
 }
@@ -88,7 +93,7 @@ export default function EcgResultScreen() {
   const { t, language } = useT();
   const { colors } = useTheme();
   const layout = useLayout();
-  const { ecgRecordings, ecgActions, heartRateBetween } = useAppData();
+  const { ecgRecordings, ecgActions, heartRateBetween, device } = useAppData();
   const params = useLocalSearchParams<{ id?: string }>();
   const wanted = Number(singleParam(params.id) ?? NaN);
   const [picked, setPicked] = useState<number | null>(null);
@@ -135,6 +140,7 @@ export default function EcgResultScreen() {
     { id: 'wrist', label: t('ecg.wrist'), value: wristText(t, recording) },
     { id: 'rate', label: t('ecg.rate'), value: recording.rateHz === null ? t('band.unknown') : t('ecg.rateValue', { rate: Math.round(recording.rateHz) }) },
     { id: 'samples', label: t('ecg.sampleCount'), value: String(recording.sampleCount) },
+    { id: 'movement', label: t('ecg.movement'), value: movementText(t, recording, device.lastSyncAt) },
     { id: 'band-hr', label: t('ecg.bandHr'), value: avgHr === null ? t('ecg.bandHrNone') : t('ecg.bandHrValue', { bpm: avgHr }) },
     { id: 'felt', label: t('ecg.feel.title'), value: symptomsText(t, symptoms) },
   ];

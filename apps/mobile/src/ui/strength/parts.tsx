@@ -305,6 +305,11 @@ export function MuscleLoadRows({ rows, testID }: LoadProps) {
               {t('strength.summary.loadShare', { percent: Math.round(row.share * 100) })}
             </AppText>
           ) : null}
+          {row.motionSets > 0 ? (
+            <AppText variant="caption" muted numeric testID={`${testID}-${row.muscle}-motion`}>
+              {t('strength.summary.motionSets', { motion: row.motionSets, sets: row.sets })}
+            </AppText>
+          ) : null}
         </View>
       ))}
     </View>

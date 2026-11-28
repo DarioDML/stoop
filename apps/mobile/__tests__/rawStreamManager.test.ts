@@ -19,6 +19,7 @@ interface Harness {
   connect(): Promise<StreamConnection>;
   drop(): Promise<void>;
   setNow(ms: number): void;
+  failConnect(on: boolean): void;
   busy: { ecg: boolean; syncing: boolean };
 }
 
@@ -31,6 +32,7 @@ function setup(opts: Partial<SimOptions> = {}, settings = new Map<string, string
   let conn: StreamConnection | null = null;
   let chain: Promise<unknown> = Promise.resolve();
   let nowMs = 0;
+  let connectFails = false;
   const reports: unknown[] = [];
   const stored: LiveImuSecond[] = [];
   const busy = { ecg: false, syncing: false };
@@ -41,6 +43,7 @@ function setup(opts: Partial<SimOptions> = {}, settings = new Map<string, string
   };
   const connect = async (): Promise<StreamConnection> => {
     if (conn !== null && conn.session.isConnected) return conn;
+    if (connectFails) throw new Error('band out of range');
     const [found] = await sim.scan(1000);
     if (found === undefined) throw new Error('no band');
     await sim.connect(found.id);
@@ -91,6 +94,9 @@ function setup(opts: Partial<SimOptions> = {}, settings = new Map<string, string
     },
     setNow: (ms) => {
       nowMs = ms;
+    },
+    failConnect: (on) => {
+      connectFails = on;
     },
   };
 }
@@ -191,6 +197,36 @@ describe('raw stream manager', () => {
     expect(h.manager.live().owners.developer).toEqual(['imu']);
     await h.manager.stop('developer');
     expect(h.band.imuOn).toBe(false);
+  });
+
+  it('a band recording that cannot start leaves no intent behind', async () => {
+    const h = setup();
+    h.failConnect(true);
+    expect(await h.manager.setBandRecording(true)).toBe(false);
+    expect(h.manager.bandRequested()).toBe(false);
+    h.failConnect(false);
+    await h.connect();
+    await wait(50);
+    expect(h.band.rawSessionBodies).toEqual([]);
+  });
+
+  it('reassert re-sends a stream the band dropped on a live link', async () => {
+    const h = setup();
+    await h.manager.start('workout', ['imu']);
+    h.band.imuOn = false;
+    expect(await h.manager.reassert('workout')).toBe(true);
+    expect(h.band.imuOn).toBe(true);
+    await h.manager.stop('workout');
+  });
+
+  it('reassert stays quiet when the band is out of range', async () => {
+    const h = setup();
+    await h.manager.start('workout', ['imu']);
+    await h.drop();
+    h.failConnect(true);
+    const before = h.reports.length;
+    expect(await h.manager.reassert('workout')).toBe(false);
+    expect(h.reports.length).toBe(before);
   });
 
   it('releaseAll switches every stream off', async () => {

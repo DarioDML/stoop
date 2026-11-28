@@ -10,7 +10,7 @@ import { donationUrl, parseDonationAmount } from '@/ui/manage/links';
 import { checkMeasure, checkProfile, defaultMaxHr } from '@/ui/manage/validation';
 import { PARITY } from '@/ui/parity';
 
-import { FIXTURE_NOW, fixtureAppData, fixtureBandActions, withAppData } from './support/appData';
+import { FIXTURE_NOW, fixtureAppData, fixtureBandActions, fixtureMotionActions, withAppData } from './support/appData';
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true },
@@ -178,7 +178,15 @@ describe('Device settings', () => {
     expect(screen.queryByTestId('hr-toggle')).toBeNull();
     await fireEvent.press(screen.getByTestId('hr-off'));
     expect(setHeartRateBroadcast).toHaveBeenCalledWith(false);
-    expect(screen.getByTestId('motion-not-built')).toBeTruthy();
+  });
+
+  it('switches high-rate motion during workouts', async () => {
+    const setHighRate = jest.fn(async () => true);
+    await render(withAppData(<DeviceSettingsScreen />, 'en', { motionActions: { ...fixtureMotionActions(), setHighRate } }));
+    expect(screen.queryByTestId('motion-not-built')).toBeNull();
+    await fireEvent(screen.getByTestId('motion-toggle'), 'valueChange', true);
+    expect(setHighRate).toHaveBeenCalledWith(true);
+    expect(screen.getByText(/while a strength session is open in the app/)).toBeTruthy();
   });
 });
 

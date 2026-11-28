@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { AppDataContext, LiveDataContext } from '@/data/context';
 import { createFixtureDays, createFixtureDevice, createFixtureSettings } from '@/data/fixtureSource';
 import { DEFAULT_ALARM_PLAN } from '@/data/alarm';
-import type { AlarmActions, AppData, BandActions, EcgActions, Language, LiveData, LiveDataStore, RawStreamActions, StrengthActions } from '@/data/types';
+import type { AlarmActions, AppData, BandActions, EcgActions, Language, LiveData, LiveDataStore, MotionActions, RawStreamActions, StrengthActions } from '@/data/types';
 import { defaultHealthConnectState } from '@/data/healthConnectState';
 import { defaultUserData } from '@/data/userData';
 
@@ -46,6 +46,10 @@ export function fixtureAlarmActions(): AlarmActions {
 
 export function fixtureEcgActions(): EcgActions {
   return { start: async () => 1, stop: () => undefined, samples: async () => [], remove: async () => true, setSymptoms: async () => true };
+}
+
+export function fixtureMotionActions(): MotionActions {
+  return { setHighRate: async () => true, setBandRecording: async () => true, liveReps: async () => null, resumeStream: async () => undefined };
 }
 
 export function fixtureRawStreams(): RawStreamActions {
@@ -104,6 +108,8 @@ export function fixtureAppData(language: Language = 'en', overrides: AppDataOver
     ecgWrist: 'left',
     ecgActions: fixtureEcgActions(),
     rawStreams: fixtureRawStreams(),
+    motion: { highRate: false, bandRecording: false, sets: {} },
+    motionActions: fixtureMotionActions(),
     stopLive: noop,
     exportData: noop,
     storageStats: async () => null,

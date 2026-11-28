@@ -2,9 +2,9 @@ import type { LoadReference } from '@openhoop/analytics';
 import type { SessionExercise, StrengthSession } from '@openhoop/core';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { Pressable, View } from 'react-native';
+import { AppState, Pressable, View } from 'react-native';
 
-import { useAppData, useLive } from '@/data/context';
+import { useAppData, useLive, useRawLive } from '@/data/context';
 import { REST_IDLE, REST_STEP_S, restBuzzDue, restReducer, restView, type RestEvent, type RestTimer } from '@/data/restTimer';
 import {
   REST_OPTIONS_S,
@@ -18,6 +18,7 @@ import {
   type SessionLoad,
   setsDone,
   stepDraftValue,
+  suggestReps,
   suggestSet,
   suggestedWeightKg,
   validateSetDraft,
@@ -26,7 +27,7 @@ import {
   type SetDraft,
   type SetField,
 } from '@/data/strength';
-import type { HeartRatePoint } from '@/data/types';
+import type { HeartRatePoint, SetMotionView } from '@/data/types';
 import type { TranslationKey } from '@/i18n';
 import { useT } from '@/i18n/useT';
 import { weightIn } from '@/lib/units';
@@ -107,13 +108,32 @@ function liveLoadMissing(reason: string | null): TranslationKey {
   return 'strength.live.loadNone';
 }
 
+function useMotionText(): (view: SetMotionView | undefined, highRate: boolean) => string | null {
+  const { t } = useT();
+  const labels = useStrengthLabels();
+  return (view, highRate) => {
+    if (view === undefined) return null;
+    if (view.status === 'readable' && view.repsDetected !== null) {
+      return t('strength.motion.line', { reps: view.repsDetected, tut: Math.round(view.tutS ?? 0), tempo: labels.num(view.tempoS ?? 0, 1) });
+    }
+    if (view.status === 'unreadable') return t('strength.motion.unreadable');
+    if (view.status === 'unmatched') return t('strength.motion.unmatched');
+    return highRate ? t('strength.motion.none') : null;
+  };
+}
+
+const LIVE_REPS_MS = 3_000;
+const STREAM_RESUME_MS = 15_000;
+
 export default function StrengthLiveScreen() {
   const { t } = useT();
   const { colors } = useTheme();
   const { narrow, width } = useLayout();
   const stackSteppers = narrow || width < STACK_BELOW_DP;
-  const { strength, strengthActions, startLive, stopLive, device, bandActions } = useAppData();
+  const { strength, strengthActions, startLive, stopLive, device, bandActions, motion, motionActions } = useAppData();
   const live = useLive();
+  const raw = useRawLive();
+  const motionText = useMotionText();
   const labels = useStrengthLabels();
   const nowMs = useNowMs();
   const session = activeSession(strength.sessions);
@@ -135,6 +155,40 @@ export default function StrengthLiveScreen() {
   });
   const heartRate = useSessionHeartRate(session, live.active ? live.heartRate : null, live.active ? live.updatedAt : null);
   const load = useLiveLoad(session, heartRate, nowMs, referenceAt);
+  const [bandReps, setBandReps] = useState<number | null>(null);
+  const motionOn = motion.highRate && session !== null;
+  const loggedCount = session?.sets.length ?? 0;
+  useEffect(() => {
+    if (!motionOn) {
+      setBandReps(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const poll = (): void => {
+      if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
+      void motionActions.liveReps().then((reps) => {
+        if (!cancelled) setBandReps(reps);
+      });
+    };
+    poll();
+    const id = setInterval(poll, LIVE_REPS_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [motionOn, loggedCount, motionActions]);
+  const streamSeconds = useRef<number | null>(null);
+  streamSeconds.current = raw.imu?.seconds ?? null;
+  useEffect(() => {
+    if (!motionOn) return undefined;
+    let last = streamSeconds.current;
+    const id = setInterval(() => {
+      const now = streamSeconds.current;
+      if (now === null || now === last) void motionActions.resumeStream();
+      last = now;
+    }, STREAM_RESUME_MS);
+    return () => clearInterval(id);
+  }, [motionOn, motionActions]);
   const startedLiveHere = useRef(false);
   const stopLiveRef = useRef(stopLive);
   stopLiveRef.current = stopLive;
@@ -260,6 +314,7 @@ export default function StrengthLiveScreen() {
     const draft = drafts[key] ?? base;
     const bad = invalid[key] ?? [];
     const upcoming = Math.max(0, item.sets - logged.length - 1);
+    const counted = suggestReps(bandReps, draft.reps);
     const steppers = (value: SetDraft, active: boolean, row: number): ReactElement => (
       <View style={{ flexDirection: stackSteppers ? 'column' : 'row', gap: spacing.sm, alignItems: stackSteppers ? 'flex-start' : 'center' }}>
         <NumberStepper
@@ -309,9 +364,10 @@ export default function StrengthLiveScreen() {
         </View>
         {logged.map((set, at) => {
           const line = `${t('strength.live.setLine', { n: at + 1, reps: set.reps, weight: labels.weightText(set.weightKg) })}${set.rpe === null ? '' : ` · ${t('strength.live.setRpe', { rpe: labels.num(set.rpe, Number.isInteger(set.rpe) ? 0 : 1) })}`}`;
+          const measured = motionText(motion.sets[set.id], motion.highRate);
           return (
+            <View key={set.id}>
             <View
-              key={set.id}
               testID={`live-set-${set.id}`}
               accessible
               accessibilityLabel={line}
@@ -336,13 +392,34 @@ export default function StrengthLiveScreen() {
                 <Icon name="close" color={colors.textMuted} size={16} />
               </Pressable>
             </View>
+            {measured === null ? null : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 36, paddingBottom: spacing.xs }} testID={`live-set-motion-${set.id}`}>
+                <Icon name="pulse" color={colors.accent} size={14} />
+                <AppText variant="caption" muted style={{ flexShrink: 1 }}>
+                  {measured}
+                </AppText>
+              </View>
+            )}
+            </View>
           );
         })}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 56, borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.xs }}>
           <Num size={18} color={colors.textMuted} style={{ width: 28 }}>
             {`${logged.length + 1}`}
           </Num>
-          <View style={{ flex: 1 }}>{steppers(draft, true, logged.length + 1)}</View>
+          <View style={{ flex: 1, gap: spacing.xs }}>
+            {steppers(draft, true, logged.length + 1)}
+            {counted !== null && item === exercise ? (
+              <Pressable
+                testID={`live-band-reps-${key}`}
+                accessibilityRole="button"
+                onPress={() => patchDraft(key, draft, { reps: String(counted) })}
+                style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.accentSoft }}>
+                <Icon name="pulse" color={colors.accent} size={14} />
+                <AppText variant="label">{t('strength.motion.counted', { n: counted })}</AppText>
+              </Pressable>
+            ) : null}
+          </View>
           <Pressable
             testID={`live-log-${key}`}
             accessibilityRole="button"
@@ -449,6 +526,27 @@ export default function StrengthLiveScreen() {
       ) : (
         setTable(exercise)
       )}
+
+      {motion.highRate ? (
+        <Card testID="live-motion" style={{ gap: spacing.xs }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Icon name="pulse" color={colors.accent} size={18} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <AppText variant="bodyStrong">{t('strength.motion.title')}</AppText>
+              <AppText variant="label" muted testID="live-motion-state">
+                {raw.owners.workout.includes('imu') && raw.imu?.rateHz != null ? t('strength.motion.streaming', { rate: raw.imu.rateHz }) : t('strength.motion.waiting')}
+              </AppText>
+            </View>
+          </View>
+          <ToggleRow
+            title={t('strength.motion.bandRecording')}
+            subtitle={t('strength.motion.bandRecordingBody')}
+            value={motion.bandRecording}
+            onChange={(on) => void motionActions.setBandRecording(on)}
+            testID="live-band-recording"
+          />
+        </Card>
+      ) : null}
 
       <Card testID="live-rest">
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, flexWrap: 'wrap' }}>

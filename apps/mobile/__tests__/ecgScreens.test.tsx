@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, type ViewStyle } from 'react-native';
 
 import { AppDataContext, LiveDataContext } from '@/data/context';
-import { ECG_CONTACT, ecgContact, ecgCsv, ecgStrips, stripLength, toggleEcgSymptom, traceColumns, traceRange } from '@/data/ecg';
+import { ECG_CONTACT, ecgContact, ecgCsv, ecgStrips, movementBand, movementMissing, stripLength, toggleEcgSymptom, traceColumns, traceRange } from '@/data/ecg';
 import { ecgReportHtml } from '@/data/ecgReport';
 import { shareEcgCsv } from '@/data/ecgShare';
 import { createFixtureDevice } from '@/data/fixtureSource';
@@ -172,6 +172,35 @@ describe('ECG result screen', () => {
     await fireEvent.press(screen.getByTestId('ecg-item-2'));
     await waitFor(() => expect(screen.getByText('Right wrist')).toBeTruthy());
     expect(screen.queryByText(/normal|sinus|atrial|irregular/i)).toBeNull();
+  });
+
+  it('names wrist movement by its size', () => {
+    expect(movementBand(0.0199)).toBe('still');
+    expect(movementBand(0.02)).toBe('some');
+    expect(movementBand(0.0799)).toBe('some');
+    expect(movementBand(0.08)).toBe('lots');
+  });
+
+  it('waits for the next sync only while the last sync ended before the reading did', () => {
+    expect(movementMissing(1_000, 30_000, null)).toBe('awaitingSync');
+    expect(movementMissing(1_000, 30_000, 1_029)).toBe('awaitingSync');
+    expect(movementMissing(1_000, 30_000, 1_030)).toBe('noData');
+  });
+
+  it('shows the wrist movement during the reading', async () => {
+    mockParams = { id: '4' };
+    await render(withAppData(<EcgResultScreen />, 'en', { ecgRecordings: [{ ...RECORDING, movementG: 0.01 }] }));
+    expect(screen.getByTestId('ecg-movement-value').props.children).toBe('Still (0.01 g)');
+  });
+
+  it('says why a reading has no movement value', async () => {
+    mockParams = { id: '4' };
+    const base = fixtureAppData();
+    const view = await render(withAppData(<EcgResultScreen />, 'en', { ecgRecordings: [RECORDING], device: { ...base.device, lastSyncAt: RECORDING.t - 10 } }));
+    expect(screen.getByTestId('ecg-movement-value').props.children).toBe('After the next sync');
+    await view.unmount();
+    await render(withAppData(<EcgResultScreen />, 'en', { ecgRecordings: [RECORDING], device: { ...base.device, lastSyncAt: RECORDING.t + 3_600 } }));
+    expect(screen.getByTestId('ecg-movement-value').props.children).toBe('No motion data for this reading');
   });
 
   it('puts a summary value under its label once it would wrap', async () => {

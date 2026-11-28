@@ -11,7 +11,6 @@ import { formatAgo } from '@/lib/format';
 import { AppText } from '@/ui/AppText';
 import { BigStatRow, BigStatTile } from '@/ui/BigStat';
 import { Card } from '@/ui/Card';
-import { Chip } from '@/ui/Chip';
 import { Button, RadioRow, Toggle } from '@/ui/controls';
 import { Icon } from '@/ui/Icon';
 import { CapHeader, ListGroup, ListRow } from '@/ui/ListGroup';
@@ -41,7 +40,7 @@ function WearLocationSheet({ visible, value, onPick, onClose }: { visible: boole
 }
 
 export default function DeviceSettingsScreen() {
-  const { device, sync, bandActions, userData, updateUserData } = useAppData();
+  const { device, sync, bandActions, userData, updateUserData, motion, motionActions } = useAppData();
   const syncProgress = useSyncProgress();
   const { t } = useT();
   const { colors } = useTheme();
@@ -216,7 +215,7 @@ export default function DeviceSettingsScreen() {
             {hrStatus}
           </AppText>
         </View>
-        <View style={{ paddingVertical: spacing.md, gap: spacing.sm }} testID="motion-not-built">
+        <View style={{ paddingVertical: spacing.md, gap: spacing.sm }} testID="motion-row">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
             <View style={{ flex: 1, gap: 3 }}>
               <AppText variant="body" style={{ fontWeight: '500' }}>
@@ -226,14 +225,11 @@ export default function DeviceSettingsScreen() {
                 {t('device.motionBody')}
               </AppText>
             </View>
-            <Toggle label={t('device.motion')} value={false} disabled onChange={() => undefined} testID="motion-toggle" />
+            <Toggle label={t('device.motion')} value={motion.highRate} onChange={(on) => void motionActions.setHighRate(on)} testID="motion-toggle" />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
-            <Chip label={t('notBuilt.title')} tone="pink" small />
-            <AppText variant="caption" muted style={{ flex: 1 }}>
-              {t('device.motionNotBuilt')}
-            </AppText>
-          </View>
+          <AppText variant="caption" muted>
+            {t('device.motionCaption')}
+          </AppText>
         </View>
       </ListGroup>
 

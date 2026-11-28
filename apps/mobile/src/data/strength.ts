@@ -305,23 +305,33 @@ export interface MuscleLoad {
   sets: number;
   volumeKg: number;
   share: number | null;
+  motionSets: number;
 }
+
+export const MOTION_FACTOR_ENABLED = false;
 
 /**
  * Muscular load: volume load (reps × weight, in kg) summed per primary muscle group, with the
- * set count next to it. No secondary muscles and no physiological weighting; bodyweight sets
- * (weight 0) add sets but no volume.
+ * set count next to it. No secondary muscles; bodyweight sets (weight 0) add sets but no volume.
+ * A set the band measured carries a tempo factor (0.7–1.3); it weights the set's volume only
+ * once the factor is switched on, and motionSets counts those sets either way.
  */
-export function muscleLoad(sets: readonly StrengthSet[]): MuscleLoad[] {
-  const total = sets.reduce((sum, set) => sum + setVolumeKg(set), 0);
+export function muscleLoad(sets: readonly StrengthSet[], factors: ReadonlyMap<number, number> = new Map(), applyFactors: boolean = MOTION_FACTOR_ENABLED): MuscleLoad[] {
+  const volume = (set: StrengthSet): number => setVolumeKg(set) * (applyFactors ? (factors.get(set.id) ?? 1) : 1);
+  const total = sets.reduce((sum, set) => sum + volume(set), 0);
   const rows: MuscleLoad[] = [];
   for (const muscle of MUSCLE_GROUPS) {
     const own = sets.filter((set) => set.muscle === muscle);
     if (own.length === 0) continue;
-    const volumeKg = own.reduce((sum, set) => sum + setVolumeKg(set), 0);
-    rows.push({ muscle, sets: own.length, volumeKg, share: total > 0 ? volumeKg / total : null });
+    const volumeKg = own.reduce((sum, set) => sum + volume(set), 0);
+    rows.push({ muscle, sets: own.length, volumeKg, share: total > 0 ? volumeKg / total : null, motionSets: own.filter((set) => factors.has(set.id)).length });
   }
   return rows.sort((a, b) => b.volumeKg - a.volumeKg || b.sets - a.sets);
+}
+
+export function suggestReps(detected: number | null, draftReps: string): number | null {
+  if (detected === null || detected < 1) return null;
+  return String(detected) === draftReps.trim() ? null : detected;
 }
 
 export function durationS(session: Pick<StrengthSession, 'startedAt' | 'endedAt'>, nowS: number): number {
