@@ -55,6 +55,7 @@ export const ALGO = {
   stress: 'stress.hr-hrv-z5m@1',
   stages: 'stages.lr-hmm30s@1',
   strengthMotion: 'strength.motion@1',
+  ecgMovement: 'ecg.movement-p75@1',
 } as const;
 
 export type AlgoId = (typeof ALGO)[keyof typeof ALGO];

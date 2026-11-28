@@ -145,7 +145,7 @@ import {
 } from '@openhoop/core';
 import { RawStreamError, afterSignals, computeEcgMovement, computeSessionMotion, imuBetween, insertSignals, listSetMotion, toMotionSecond } from '@openhoop/core';
 import type { StrengthSession } from '@openhoop/core';
-import { STRENGTH_MOTION, analyseBout, lastBoutBefore } from '@openhoop/analytics';
+import { ALGO, STRENGTH_MOTION, analyseBout, lastBoutBefore } from '@openhoop/analytics';
 import type { StreamKind } from '@openhoop/core';
 import { spo2Windows } from '@openhoop/analytics';
 import type { Profile as AnalyticsProfile } from '@openhoop/analytics';
@@ -1945,9 +1945,9 @@ export class AppController {
     const { driver, store } = this.requireApp();
     const key = `${ECG_MOVEMENT_BACKFILL_KEY}.${deviceId}`;
     try {
-      if ((await store.getSetting(key)) === '1') return;
-      const updated = await computeEcgMovement(driver, deviceId, 0, nowSeconds() + DAY_S, offsetS);
-      await store.setSetting(key, '1');
+      if ((await store.getSetting(key)) === ALGO.ecgMovement) return;
+      const updated = await computeEcgMovement(driver, deviceId, 0, nowSeconds() + DAY_S, offsetS, { replace: true });
+      await store.setSetting(key, ALGO.ecgMovement);
       if (updated > 0 && this.deviceRow?.id === deviceId) this.patch({ ecgRecordings: await listEcgRecordings(driver, deviceId) });
     } catch (error) {
       this.fail(error);

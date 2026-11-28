@@ -161,9 +161,17 @@ export async function sessionsNeedingMotion(driver: SqlDriver, fromBand: number,
   return rows.map((r) => r.id);
 }
 
-export async function computeEcgMovement(driver: SqlDriver, deviceId: number, fromBand: number, toBand: number, offsetS: number): Promise<number> {
+export async function computeEcgMovement(
+  driver: SqlDriver,
+  deviceId: number,
+  fromBand: number,
+  toBand: number,
+  offsetS: number,
+  opts: { replace: boolean } = { replace: false },
+): Promise<number> {
+  const missing = opts.replace ? '' : ' AND movement_g IS NULL';
   const rows = await driver.all<{ id: number; t: number; duration_ms: number }>(
-    'SELECT id, t, duration_ms FROM ecg_recordings WHERE device_id = ? AND movement_g IS NULL AND t + ? <= ? AND t + ? + duration_ms / 1000.0 >= ?',
+    `SELECT id, t, duration_ms FROM ecg_recordings WHERE device_id = ?${missing} AND t + ? <= ? AND t + ? + duration_ms / 1000.0 >= ?`,
     [deviceId, offsetS, toBand, offsetS, fromBand],
   );
   let updated = 0;
@@ -176,7 +184,7 @@ export async function computeEcgMovement(driver: SqlDriver, deviceId: number, fr
     if (present / expected < ECG_MIN_COVERAGE) continue;
     const movement = wristMovementG(seconds, from, to);
     if (movement === null) continue;
-    updated += (await driver.run('UPDATE ecg_recordings SET movement_g = ? WHERE id = ? AND movement_g IS NULL', [movement, row.id])).changes;
+    updated += (await driver.run(`UPDATE ecg_recordings SET movement_g = ? WHERE id = ?${missing}`, [movement, row.id])).changes;
   }
   return updated;
 }

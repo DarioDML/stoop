@@ -118,8 +118,9 @@ export type MovementBand = 'still' | 'some' | 'lots';
 export const MOVEMENT_G = { still: 0.02, some: 0.08 } as const;
 
 export function movementBand(g: number): MovementBand {
-  if (g < MOVEMENT_G.still) return 'still';
-  return g < MOVEMENT_G.some ? 'some' : 'lots';
+  const shown = Number(g.toFixed(2));
+  if (shown < MOVEMENT_G.still) return 'still';
+  return shown < MOVEMENT_G.some ? 'some' : 'lots';
 }
 
 export function movementMissing(recordingT: number, durationMs: number, lastSyncAt: number | null): 'awaitingSync' | 'noData' {
