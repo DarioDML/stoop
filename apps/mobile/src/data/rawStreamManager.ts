@@ -81,6 +81,10 @@ export class RawStreamManager {
     return this.owners.has(owner);
   }
 
+  bandRequested(): boolean {
+    return this.bandWanted;
+  }
+
   async start(owner: StreamOwner, kinds: readonly StreamKind[]): Promise<boolean> {
     const busy = this.host.busy();
     if (busy.ecg || (owner === 'developer' && busy.syncing)) {
@@ -120,7 +124,24 @@ export class RawStreamManager {
     this.bandWanted = on;
     if (!on) this.bandConfirmed = false;
     await this.settle();
-    return on ? this.bandConfirmed : !this.bandMayBeOn;
+    if (on && !this.bandConfirmed) {
+      this.bandWanted = false;
+      if (this.bandMayBeOn) await this.settle();
+      return false;
+    }
+    return on ? true : !this.bandMayBeOn;
+  }
+
+  async reassert(owner: StreamOwner): Promise<boolean> {
+    const kinds = this.owners.kindsOf(owner);
+    if (kinds.length === 0) return false;
+    for (const kind of kinds) this.confirmed.delete(kind);
+    try {
+      await this.queue();
+    } catch {
+      return false;
+    }
+    return kinds.every((kind) => this.confirmed.has(kind));
   }
 
   async background(): Promise<void> {

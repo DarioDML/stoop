@@ -145,7 +145,7 @@ import {
 } from '@openhoop/core';
 import { RawStreamError, afterSignals, computeSessionMotion, imuBetween, insertSignals, listSetMotion, toMotionSecond } from '@openhoop/core';
 import type { StrengthSession } from '@openhoop/core';
-import { analyseBout, lastBoutBefore } from '@openhoop/analytics';
+import { STRENGTH_MOTION, analyseBout, lastBoutBefore } from '@openhoop/analytics';
 import type { StreamKind } from '@openhoop/core';
 import { spo2Windows } from '@openhoop/analytics';
 import type { Profile as AnalyticsProfile } from '@openhoop/analytics';
@@ -601,6 +601,7 @@ export class AppController {
     });
     setInterval(() => {
       if (this.streams.active().length > 0) void this.streams.checkCaps();
+      if ((this.streams.hasOwner('workout') || this.streams.bandRequested()) && this.workoutSession() === null) void this.syncWorkoutStream();
     }, STREAM_CAP_CHECK_MS);
     try {
       removeLeftoverExports();
@@ -692,7 +693,11 @@ export class AppController {
       const { store } = this.requireApp();
       const rebuilt = await rebuildStaleSamples(store, (deviceId) => this.recompute(deviceId, null));
       const recomputed = await recomputeStaleDays(store, (deviceId) => (rebuilt.includes(deviceId) ? Promise.resolve() : this.recompute(deviceId, null)));
-      for (const deviceId of rebuilt) await this.afterSignalsFor(deviceId, { from: 0, to: nowSeconds() + DAY_S }, 0);
+      for (const deviceId of rebuilt) {
+        await this.afterSignalsFor(deviceId, { from: 0, to: nowSeconds() + DAY_S }, 0).catch((error: unknown) => {
+          this.fail(error);
+        });
+      }
       if (rebuilt.length === 0 && recomputed.length === 0) return;
       if (this.deviceRow !== null) await this.loadBandReports(this.deviceRow.id);
       this.patch({ syncProgress: null });
@@ -985,11 +990,15 @@ export class AppController {
         this.backlogPages = 0;
       }
       const computeStarted = Date.now();
-      if (result.signalRange !== null) await this.afterSignalsFor(deviceId, result.signalRange, conn.session.clockOffsetS() ?? 0);
       await this.recompute(deviceId, previousNewest === null ? null : previousNewest - INCREMENTAL_RECOMPUTE_BACK_S);
       await this.pruneRaw();
       await this.loadBandReports(deviceId);
       await this.syncAlarm(conn);
+      if (result.signalRange !== null) {
+        await this.afterSignalsFor(deviceId, result.signalRange, conn.session.clockOffsetS() ?? 0).catch((error: unknown) => {
+          this.fail(error);
+        });
+      }
       const computeMs = Date.now() - computeStarted;
       const after = await store.getSyncState(deviceId);
       this.lastSyncAt = after?.lastSyncAt ?? this.lastSyncAt;
@@ -1842,9 +1851,11 @@ export class AppController {
 
   private readonly strengthActionSet: StrengthActions = this.strengthActions();
 
+  private resumingStream = false;
+
   private async afterStrength<T>(run: Promise<T>): Promise<T> {
     const result = await run;
-    await this.syncWorkoutStream();
+    void this.syncWorkoutStream();
     return result;
   }
 
@@ -1862,12 +1873,19 @@ export class AppController {
     },
     setBandRecording: async (on: boolean) => {
       const done = await this.streams.setBandRecording(on);
-      this.patch({ motion: { ...this.snapshot.motion, bandRecording: done ? on : this.snapshot.motion.bandRecording } });
+      this.patch({ motion: { ...this.snapshot.motion, bandRecording: on ? done : false } });
       return done;
     },
     liveReps: () => this.liveRepCount(),
     resumeStream: async () => {
-      if (this.workoutSession() !== null) await this.streams.start('workout', ['imu']);
+      if (this.resumingStream || this.workoutSession() === null) return;
+      this.resumingStream = true;
+      try {
+        if (this.streams.hasOwner('workout')) await this.streams.reassert('workout');
+        else await this.syncWorkoutStream();
+      } finally {
+        this.resumingStream = false;
+      }
     },
   };
 
@@ -1884,7 +1902,7 @@ export class AppController {
       return;
     }
     if (this.streams.hasOwner('workout')) await this.streams.stop('workout');
-    if (this.snapshot.motion.bandRecording) await this.motionActionSet.setBandRecording(false);
+    if (this.snapshot.motion.bandRecording || this.streams.bandRequested()) await this.motionActionSet.setBandRecording(false);
   }
 
   private async refreshSetMotion(): Promise<void> {
@@ -1930,7 +1948,8 @@ export class AppController {
     const nowBand = nowSeconds() + offsetS;
     const after = lastDone + offsetS;
     try {
-      const seconds = (await imuBetween(this.requireApp().driver, deviceId, Math.floor(after), Math.ceil(nowBand))).map(toMotionSecond);
+      const from = Math.max(after, nowBand - STRENGTH_MOTION.searchS - STRENGTH_MOTION.gravityWindowS);
+      const seconds = (await imuBetween(this.requireApp().driver, deviceId, Math.floor(from), Math.ceil(nowBand))).map(toMotionSecond);
       const bout = lastBoutBefore(seconds, nowBand, after);
       if (bout === null) return null;
       const motion = analyseBout(seconds, bout);
@@ -1972,7 +1991,7 @@ export class AppController {
         const done = await this.runStrength((driver) => finishStrengthSession(driver, id, nowSeconds()), false);
         if (done) void this.refreshNotifications();
         if (done) void this.computeMotionFor(id);
-        await this.syncWorkoutStream();
+        void this.syncWorkoutStream();
         return done;
       },
       removeSession: (id: number) => this.afterStrength(this.runStrength((driver) => deleteStrengthSession(driver, id), false)),

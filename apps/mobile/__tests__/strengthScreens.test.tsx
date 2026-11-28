@@ -2,6 +2,7 @@ import type { StrengthData, StrengthSession, StrengthSet, StrengthTemplate } fro
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react-native';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 import type { ReactNode } from 'react';
+import { AppState } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
 import { defaultCoachPrefs } from '@/coach/prefs';
@@ -524,6 +525,21 @@ describe('motion during a session', () => {
     await fireEvent.press(chip);
     expect(screen.getByTestId('live-reps-lib:bench_press').props.value).toBe('7');
     expect(screen.queryByText('Band counted 7 · Use')).toBeNull();
+  });
+
+  it('does not read band reps while the app is in the background', async () => {
+    const motionActions = { ...fixtureMotionActions(), liveReps: jest.fn(async () => 7) };
+    const original = Object.getOwnPropertyDescriptor(AppState, 'currentState');
+    Object.defineProperty(AppState, 'currentState', { value: 'background', configurable: true });
+    try {
+      await render(withAppData(<StrengthLiveScreen />, 'en', app(data({ sessions: [running] }), actions(), { motion: motionOn({}), motionActions })));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(motionActions.liveReps).not.toHaveBeenCalled();
+    } finally {
+      if (original !== undefined) Object.defineProperty(AppState, 'currentState', original);
+    }
   });
 
   it('records on the band only when asked, and says what it costs', async () => {

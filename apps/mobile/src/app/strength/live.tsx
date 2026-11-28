@@ -2,7 +2,7 @@ import type { LoadReference } from '@openhoop/analytics';
 import type { SessionExercise, StrengthSession } from '@openhoop/core';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { Pressable, View } from 'react-native';
+import { AppState, Pressable, View } from 'react-native';
 
 import { useAppData, useLive, useRawLive } from '@/data/context';
 import { REST_IDLE, REST_STEP_S, restBuzzDue, restReducer, restView, type RestEvent, type RestTimer } from '@/data/restTimer';
@@ -165,6 +165,7 @@ export default function StrengthLiveScreen() {
     }
     let cancelled = false;
     const poll = (): void => {
+      if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
       void motionActions.liveReps().then((reps) => {
         if (!cancelled) setBandReps(reps);
       });
