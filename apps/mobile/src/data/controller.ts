@@ -143,7 +143,7 @@ import {
   type DonationDay,
   type DonationProgress,
 } from '@openhoop/core';
-import { RawStreamError, afterSignals, computeSessionMotion, imuBetween, insertSignals, listSetMotion, toMotionSecond } from '@openhoop/core';
+import { RawStreamError, afterSignals, computeEcgMovement, computeSessionMotion, imuBetween, insertSignals, listSetMotion, toMotionSecond } from '@openhoop/core';
 import type { StrengthSession } from '@openhoop/core';
 import { STRENGTH_MOTION, analyseBout, lastBoutBefore } from '@openhoop/analytics';
 import type { StreamKind } from '@openhoop/core';
@@ -369,6 +369,7 @@ const ECG_WRIST_KEY = 'ecg.wrist';
 
 const STREAM_CAP_CHECK_MS = 1_000;
 const HIGH_RATE_MOTION_KEY = 'strength.highRateMotion';
+const ECG_MOVEMENT_BACKFILL_KEY = 'ecg.movementBackfill';
 const WORKOUT_STREAM_MAX_S = 4 * 3600;
 const SET_MOTION_DELAY_MS = 1_500;
 
@@ -999,6 +1000,7 @@ export class AppController {
           this.fail(error);
         });
       }
+      await this.backfillEcgMovement(deviceId, conn.session.clockOffsetS() ?? 0);
       const computeMs = Date.now() - computeStarted;
       const after = await store.getSyncState(deviceId);
       this.lastSyncAt = after?.lastSyncAt ?? this.lastSyncAt;
@@ -1937,6 +1939,19 @@ export class AppController {
     const result = await afterSignals(driver, deviceId, range, offsetS);
     if (result.sessions > 0) await this.refreshSetMotion();
     if (result.ecg > 0 && this.deviceRow?.id === deviceId) this.patch({ ecgRecordings: await listEcgRecordings(driver, deviceId) });
+  }
+
+  private async backfillEcgMovement(deviceId: number, offsetS: number): Promise<void> {
+    const { driver, store } = this.requireApp();
+    const key = `${ECG_MOVEMENT_BACKFILL_KEY}.${deviceId}`;
+    try {
+      if ((await store.getSetting(key)) === '1') return;
+      const updated = await computeEcgMovement(driver, deviceId, 0, nowSeconds() + DAY_S, offsetS);
+      await store.setSetting(key, '1');
+      if (updated > 0 && this.deviceRow?.id === deviceId) this.patch({ ecgRecordings: await listEcgRecordings(driver, deviceId) });
+    } catch (error) {
+      this.fail(error);
+    }
   }
 
   private async liveRepCount(): Promise<number | null> {
